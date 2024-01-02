@@ -1,0 +1,19 @@
+body .foo {
+  background-color: red;
+}
+
+body .foo .bar {
+  background-color: red;
+}
+
+.foo {
+  background-color: red;
+
+  .thing-in-foo {
+    background-color: red;
+  }
+
+  &>.direct-child-of-foo {
+    background-color: red;
+  }
+}
