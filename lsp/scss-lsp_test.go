@@ -16,14 +16,14 @@ func makeTestLsp() *lsp.Lsp {
 	return local_lsp
 }
 
-func TestTreeParse(t *testing.T) {
+func TestTreeWalking(t *testing.T) {
 	local_lsp := makeTestLsp()
 	if local_lsp == nil {
 		t.Fatalf("failed to create lsp")
 	}
   local_lsp.WalkFromRoot()
 	// this is not great, but it is what it is
-	expected := 3
+	expected := 5
 	if len(local_lsp.Trees) != expected {
 		t.Fatalf("expected %d trees, got %d", expected, len(local_lsp.Trees))
 	}

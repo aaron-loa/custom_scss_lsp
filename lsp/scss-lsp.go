@@ -13,20 +13,29 @@ import (
 )
 
 type ParsedTree struct {
-	Tree  *sitter.Tree
+	// treesitter tree was made from this input, needs to be synced
 	Input *[]byte
+	Tree  *sitter.Tree
 }
 
 type Lsp struct {
 	RootPath        string
 	Parser          *Parser
 	RootConn        rpc2.Conn
-	selectorEntries map[string][]SelectorEntry
+	SelectorEntries map[string][]Entry
 	Trees           map[string]*ParsedTree
+	Mixins          map[string][]OnHover
+	Functions       map[string][]OnHover
 }
 
-type SelectorEntry struct {
+type Entry struct {
 	name     string
+	position sitter.Point
+}
+
+type OnHover struct {
+	name     string
+	body     string
 	position sitter.Point
 }
 
@@ -35,7 +44,9 @@ func DefaultLsp() *Lsp {
 		RootPath:        "",
 		Parser:          NewParser(),
 		Trees:           make(map[string]*ParsedTree),
-		selectorEntries: make(map[string][]SelectorEntry),
+		SelectorEntries: make(map[string][]Entry),
+		Mixins:          make(map[string][]OnHover),
+		Functions:       make(map[string][]OnHover),
 	}
 }
 
@@ -53,16 +64,19 @@ func (lsp *Lsp) WalkFromRoot() {
 			file, err := os.Open(path)
 			if err != nil {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
+				return nil
 			}
 
 			text, err := io.ReadAll(file)
 			if err != nil {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
+				return nil
 			}
 
 			tree, err := lsp.Parser.ParseBytes(text, nil)
 			if err != nil {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
+				return nil
 			}
 
 			lsp.Trees[path] = &ParsedTree{

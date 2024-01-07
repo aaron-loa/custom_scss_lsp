@@ -1,0 +1,23 @@
+@function test_function_a($color) {
+  @return $color;
+}
+
+@function test_function_b($color, $one_more) {
+  @return $color;
+}
+
+@function test_function_c() {
+  @return "something";
+}
+
+@mixin test_mixin_a($color) {
+  color: $color;
+}
+
+@mixin test_mixin_b($color, $one_more) {
+  color: $color;
+}
+
+@mixin test_mixin_c() {
+  color: $color;
+}
