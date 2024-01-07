@@ -1,3 +1,5 @@
+// DON'T EDIT THIS FILE
+
 body .foo {
   background-color: red;
 }
@@ -6,14 +8,28 @@ body .foo .bar {
   background-color: red;
 }
 
-.foo {
+.level-one {
   background-color: red;
 
-  .thing-in-foo {
+  .level-two-a {
     background-color: red;
+
+    .level-three-a {
+      background-color: red;
+    }
+
+    .level-three-b {
+      background-color: red;
+    }
   }
 
-  &>.direct-child-of-foo {
+  &>.level-two-b {
+    background-color: red;
+  }
+}
+
+.another {
+  .nested {
     background-color: red;
   }
 }

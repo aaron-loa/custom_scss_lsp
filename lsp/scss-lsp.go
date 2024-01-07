@@ -4,34 +4,51 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	parser "scss-lsp/parser"
-
 	sitter "github.com/smacker/go-tree-sitter"
 	rpc2 "go.lsp.dev/jsonrpc2"
 	"go.lsp.dev/protocol"
+	"io"
+	"os"
+	"path/filepath"
 )
 
+type ParsedTree struct {
+	Tree  *sitter.Tree
+	Input *[]byte
+}
+
 type Lsp struct {
-	rootPath string
-	parser   *parser.Parser
-	trees    map[string]*sitter.Tree
-	rootConn rpc2.Conn
+	RootPath        string
+	Parser          *Parser
+	RootConn        rpc2.Conn
+	selectorEntries map[string][]SelectorEntry
+	Trees           map[string]*ParsedTree
+}
+
+type SelectorEntry struct {
+	name     string
+	position sitter.Point
+}
+
+func DefaultLsp() *Lsp {
+	return &Lsp{
+		RootPath:        "",
+		Parser:          NewParser(),
+		Trees:           make(map[string]*ParsedTree),
+		selectorEntries: make(map[string][]SelectorEntry),
+	}
 }
 
 func (lsp *Lsp) WalkFromRoot() {
 	exclude_dirs := []string{".git", "node_modules", "build"}
-	filepath.WalkDir(lsp.rootPath, func(path string, d os.DirEntry, err error) error {
+	filepath.WalkDir(lsp.RootPath, func(path string, d os.DirEntry, err error) error {
 		for _, e := range exclude_dirs {
 			if e == d.Name() && d.IsDir() {
 				return filepath.SkipDir
 			}
 		}
 		extension := filepath.Ext(path)
-		fmt.Println(extension)
-    
+
 		if extension == ".scss" || extension == ".css" {
 			file, err := os.Open(path)
 			if err != nil {
@@ -43,11 +60,15 @@ func (lsp *Lsp) WalkFromRoot() {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
 			}
 
-			tree, err := lsp.parser.ParseBytes(text, nil)
+			tree, err := lsp.Parser.ParseBytes(text, nil)
 			if err != nil {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
 			}
-			lsp.trees[path] = tree
+
+			lsp.Trees[path] = &ParsedTree{
+				Tree:  tree,
+				Input: &text,
+			}
 		}
 
 		return nil
@@ -66,10 +87,10 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 
 		// RootURI is deprecated? but everything uses it? hmmm
-		lsp.Log(fmt.Sprintf("%+v", replyParams.RootURI), protocol.MessageTypeError)
+		lsp.Log(fmt.Sprintf("%+v", replyParams.RootURI.Filename()), protocol.MessageTypeError)
 
 		if replyParams.RootURI != "" {
-			lsp.rootPath = replyParams.RootURI.Filename()
+			lsp.RootPath = replyParams.RootURI.Filename()
 		} else {
 			ctx.Done()
 			return reply(ctx, fmt.Errorf("no root path"), nil)
@@ -80,8 +101,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 				DefinitionProvider: true,
 				HoverProvider:      true,
 				TextDocumentSync: protocol.TextDocumentSyncOptions{
-					Change:    protocol.TextDocumentSyncKindFull,
-					OpenClose: true,
+					OpenClose: false,
 					Save: &protocol.SaveOptions{
 						IncludeText: true,
 					},
@@ -97,26 +117,20 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 	// in the statusline, result is the result of the request
 	return reply(ctx, fmt.Errorf("method not found: %q", req.Method()), nil)
 }
-func DefaultLsp() *Lsp {
-  return &Lsp{
-    rootPath: "", 
-    parser: parser.NewParser(),
-    trees: make(map[string]*sitter.Tree),
-  }
-}
+
 func (lsp *Lsp) Init() {
-  lsp = DefaultLsp()
+	lsp = DefaultLsp()
 
 	bufStream := rpc2.NewStream(&rwc{os.Stdin, os.Stdout})
-	lsp.rootConn = rpc2.NewConn(bufStream)
+	lsp.RootConn = rpc2.NewConn(bufStream)
 
 	ctx := context.Background()
-	lsp.rootConn.Go(ctx, lsp.LspHandler)
-	<-lsp.rootConn.Done()
+	lsp.RootConn.Go(ctx, lsp.LspHandler)
+	<-lsp.RootConn.Done()
 }
 
 func (lsp *Lsp) Log(message string, messageType protocol.MessageType) {
-	lsp.rootConn.Notify(context.Background(), protocol.MethodWindowLogMessage, protocol.LogMessageParams{
+	lsp.RootConn.Notify(context.Background(), protocol.MethodWindowLogMessage, protocol.LogMessageParams{
 		Message: fmt.Sprintf("SCSS-LSP: %s", message),
 		Type:    messageType,
 	})

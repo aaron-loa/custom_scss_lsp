@@ -1,16 +1,30 @@
-package lsp
+package lsp_test
 
 import (
 	"testing"
+	"go.lsp.dev/uri"
+  lsp "scss-lsp/lsp"
 )
 
+func makeTestLsp() *lsp.Lsp {
+	local_lsp := lsp.DefaultLsp()
+	parsed_uri, err := uri.Parse("file:///home/ron/programs/scss-lsp/test_dir")
+	if err != nil {
+		return nil
+	}
+	local_lsp.RootPath = parsed_uri.Filename()
+	return local_lsp
+}
+
 func TestTreeParse(t *testing.T) {
-	lsp := DefaultLsp()
-	lsp.rootPath = "/home/ron/programs/scss-lsp/test_dir/"
-	lsp.WalkFromRoot()
-  // this is not great, but it is what it is
+	local_lsp := makeTestLsp()
+	if local_lsp == nil {
+		t.Fatalf("failed to create lsp")
+	}
+  local_lsp.WalkFromRoot()
+	// this is not great, but it is what it is
 	expected := 3
-	if len(lsp.trees) != expected {
-		t.Fatalf("expected %d trees, got %d", expected, len(lsp.trees))
+	if len(local_lsp.Trees) != expected {
+		t.Fatalf("expected %d trees, got %d", expected, len(local_lsp.Trees))
 	}
 }
