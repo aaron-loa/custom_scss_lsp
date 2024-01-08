@@ -74,29 +74,30 @@ func (p *Parser) ParseTree(parsed_tree *ParsedTree) []Entry {
 		}
 		// always rule_set node
 		rule_set_node := match.Captures[0].Node
-		name := p.ParseRuleSet(rule_set_node, input)
-		position := rule_set_node.StartPoint()
-		entries = append(entries, Entry{name: name, position: position})
+		name := p.parseRuleSet(rule_set_node, input)
+		start_position := rule_set_node.StartPoint()
+		end_position := rule_set_node.StartPoint()
+    entries = append(entries, Entry{name: name, start_position: start_position, end_position: end_position})
 	}
 	return entries
 }
 
-func (p *Parser) ParseRuleSet(rule_set_node *sitter.Node, input *[]byte) string {
-	name := p.ParseSelectors(rule_set_node, input)
+func (p *Parser) parseRuleSet(rule_set_node *sitter.Node, input *[]byte) string {
+	name := p.parseSelectors(rule_set_node, input)
 	parent := rule_set_node.Parent()
 	for {
 		if parent == nil {
 			break
 		}
 		if parent.Type() == "rule_set" {
-			name = p.ParseSelectors(parent, input) + " " + name
+			name = p.parseSelectors(parent, input) + " " + name
 		}
 		parent = parent.Parent()
 	}
 	return name
 }
 
-func (p *Parser) ParseSelectors(rule_set_node *sitter.Node, input *[]byte) string {
+func (p *Parser) parseSelectors(rule_set_node *sitter.Node, input *[]byte) string {
 	cursor := sitter.NewQueryCursor()
 	cursor.Exec(p.selectorQuery, rule_set_node)
 	node, has_node := cursor.NextMatch()
@@ -126,8 +127,9 @@ func (p *Parser) ParseMixinsInTree(parsed_tree *ParsedTree) []OnHover {
 		name := mixin_statement_node.NamedChild(0)
 		parameters := mixin_statement_node.NamedChild(1)
 		body := name.Content(*input) + parameters.Content(*input)
-		position := mixin_statement_node.StartPoint()
-		mixins = append(mixins, OnHover{name: name.Content(*input), body: body, position: position})
+		start_position := mixin_statement_node.StartPoint()
+		end_position := mixin_statement_node.EndPoint()
+		mixins = append(mixins, OnHover{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
 	}
 	return mixins
 }
@@ -151,8 +153,9 @@ func (p *Parser) ParseFunctionsInTree(parsed_tree *ParsedTree) []OnHover {
 		name := function_statement_node.NamedChild(0)
 		parameters := function_statement_node.NamedChild(1)
 		body := name.Content(*input) + parameters.Content(*input)
-		position := function_statement_node.StartPoint()
-		functions = append(functions, OnHover{name: name.Content(*input), body: body, position: position})
+		start_position := function_statement_node.StartPoint()
+		end_position := function_statement_node.EndPoint()
+		functions = append(functions, OnHover{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
 	}
 	return functions
 }
@@ -170,13 +173,14 @@ func (p *Parser) ParseVariablesInTree(parsed_tree *ParsedTree) []OnHover {
 			break
 		}
 		// always function_statement node
-		declearation_node := match.Captures[0].Node
-		// getfieldbyname doesnt want to work for some reason
-		// this is good enough for now
-		name := declearation_node.NamedChild(0)
-		body := declearation_node.Content(*input)
-		position := declearation_node.StartPoint()
-		variables = append(variables, OnHover{name: name.Content(*input), body: body, position: position})
+		declaration_node := match.Captures[0].Node
+		// this doesnt want to work for some reason, probably doing something wrong
+		// name := declearation_node.ChildByFieldName("name")
+		name := declaration_node.NamedChild(0)
+		body := declaration_node.Content(*input)
+		start_position := declaration_node.StartPoint()
+		end_position := declaration_node.EndPoint()
+		variables = append(variables, OnHover{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
 	}
 	return variables
 }

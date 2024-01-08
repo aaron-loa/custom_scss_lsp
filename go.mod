@@ -5,6 +5,7 @@ go 1.21.0
 require (
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.3.4 // indirect
+	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/smacker/go-tree-sitter v0.0.0-20230720070738-0d0a9f78d8f8 // indirect
 	go.lsp.dev/jsonrpc2 v0.10.0 // indirect
 	go.lsp.dev/pkg v0.0.0-20210717090340-384b27a52fb2 // indirect

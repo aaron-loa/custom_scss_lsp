@@ -17,43 +17,52 @@ func TestTreeParse(t *testing.T) {
 	lsp.WalkFromRoot()
 	local_parser := NewParser()
 	entries := local_parser.ParseTree(lsp.Trees[test_tree])
-	// TODO MAKE TEST FOR POSITIONS
+	// TODO TEST FOR POSITIONS
 	expected := []Entry{
 		{
 			name:     ("body .foo"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     ("body .foo .bar"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".level-one"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".level-one .level-two-a"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".level-one .level-two-a .level-three-a"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".level-one .level-two-a .level-three-b"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".level-one &>.level-two-b"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".another"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 		{
 			name:     (".another .nested"),
-			position: sitter.Point{},
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
 		},
 	}
 	if len(entries) != len(expected) {
@@ -84,17 +93,19 @@ func TestMixinParse(t *testing.T) {
 		{
 			name:     "test_mixin_a",
 			body:     "test_mixin_a($color)",
-			position: sitter.Point{},
+      start_position: sitter.Point{},
 		},
 		{
 			name:     "test_mixin_b",
 			body:     "test_mixin_b($color, $one_more)",
-			position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
 		},
 		{
 			name:     "test_mixin_c",
 			body:     "test_mixin_c()",
-			position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
 		},
 	}
 
@@ -129,17 +140,20 @@ func TestFunctionParse(t *testing.T) {
 		{
 			name:     "test_function_a",
 			body:     "test_function_a($color)",
-			position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
 		},
 		{
 			name:     "test_function_b",
 			body:     "test_function_b($color, $one_more)",
-			position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
 		},
 		{
 			name:     "test_function_c",
 			body:     "test_function_c()",
-			position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
 		},
 	}
 
@@ -175,47 +189,56 @@ func TestVariablesParse(t *testing.T) {
     {
       name: "$color1",
       body: "$color1: #000;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color2",
       body: "$color2: #100;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color3",
       body: "$color3: #200;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color4",
       body: "$color4: #300;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color5",
       body: "$color5: #400;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color6",
       body: "$color6: #500;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color7",
       body: "$color7: #600;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$color8",
       body: "$color8: #700;",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
     {
       name: "$function_return",
       body: "$function_return: floor(1);",
-      position: sitter.Point{},
+      start_position: sitter.Point{},
+      end_position: sitter.Point{},
     },
 	}
 
