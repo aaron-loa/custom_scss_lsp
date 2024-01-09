@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	sitter "github.com/smacker/go-tree-sitter"
-	rpc2 "go.lsp.dev/jsonrpc2"
-	"go.lsp.dev/protocol"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
+
+	sitter "github.com/smacker/go-tree-sitter"
+	rpc2 "go.lsp.dev/jsonrpc2"
+	"go.lsp.dev/protocol"
+	"go.lsp.dev/uri"
 )
 
 type ParsedTree struct {
@@ -24,9 +27,9 @@ type Lsp struct {
 	RootConn        rpc2.Conn
 	SelectorEntries map[string][]Entry
 	Trees           map[string]*ParsedTree
-	Mixins          map[string][]OnHover
-	Functions       map[string][]OnHover
-	Variables       map[string][]OnHover
+	Mixins          map[string][]isDefined
+	Functions       map[string][]isDefined
+	Variables       map[string][]isDefined
 }
 
 type Entry struct {
@@ -35,7 +38,7 @@ type Entry struct {
 	end_position   sitter.Point
 }
 
-type OnHover struct {
+type isDefined struct {
 	name           string
 	body           string
 	start_position sitter.Point
@@ -48,14 +51,14 @@ func DefaultLsp() *Lsp {
 		Parser:          NewParser(),
 		Trees:           make(map[string]*ParsedTree),
 		SelectorEntries: make(map[string][]Entry),
-		Mixins:          make(map[string][]OnHover),
-		Functions:       make(map[string][]OnHover),
-		Variables:       make(map[string][]OnHover),
+		Mixins:          make(map[string][]isDefined),
+		Functions:       make(map[string][]isDefined),
+		Variables:       make(map[string][]isDefined),
 	}
 }
 
 func (lsp *Lsp) WalkFromRoot() {
-	exclude_dirs := []string{".git", "node_modules", "build"}
+	exclude_dirs := []string{".git", "node_modules", "build", "vendor"}
 	filepath.WalkDir(lsp.RootPath, func(path string, d os.DirEntry, err error) error {
 		for _, e := range exclude_dirs {
 			if e == d.Name() && d.IsDir() {
@@ -106,34 +109,33 @@ func (lsp *Lsp) UpdateTree(tree *ParsedTree, path string) {
 	lsp.Variables[path] = lsp.Parser.ParseVariablesInTree(tree)
 }
 
-func (lsp *Lsp) findHoverableByNameInMap(name string, in_this *map[string][]OnHover) string {
+func (lsp *Lsp) findHoverableByNameInMap(name string, in_this *map[string][]isDefined) (*isDefined, string) {
 	for path, array := range *in_this {
 		for _, entry := range array {
 			if entry.name == name {
-				return name + "\n defined in: " + path
+				return &entry, path
 			}
 		}
 	}
-	return ""
+	return nil, ""
 }
 
-func (lsp *Lsp) findHoverableByName(name string) string {
-	hover_info := lsp.findHoverableByNameInMap(name, &lsp.Mixins)
-	if hover_info != "" {
-		return hover_info
+func (lsp *Lsp) findHoverableByName(name string) (string, *isDefined, string) {
+	is_defined_object, path := lsp.findHoverableByNameInMap(name, &lsp.Mixins)
+	if is_defined_object != nil {
+		return "@mixin", is_defined_object, path
 	}
 
-	hover_info = lsp.findHoverableByNameInMap(name, &lsp.Functions)
-	if hover_info != "" {
-		return hover_info
+	is_defined_object, path = lsp.findHoverableByNameInMap(name, &lsp.Functions)
+	if is_defined_object != nil {
+		return "@function", is_defined_object, path
 	}
 
-	hover_info = lsp.findHoverableByNameInMap(name, &lsp.Variables)
-	if hover_info != "" {
-		return hover_info
+	is_defined_object, path = lsp.findHoverableByNameInMap(name, &lsp.Variables)
+	if is_defined_object != nil {
+		return "$variable", is_defined_object, path
 	}
-
-	return ""
+	return "", nil, ""
 }
 
 func (lsp *Lsp) GetHoverInfo(path string, position sitter.Point) string {
@@ -148,7 +150,55 @@ func (lsp *Lsp) GetHoverInfo(path string, position sitter.Point) string {
 	if node == nil {
 		return ""
 	}
-	return lsp.findHoverableByName(node.Content(*input)) 
+
+	node_type, definition, found_path := lsp.findHoverableByName(node.Content(*input))
+  if definition == nil {
+    return ""
+  }
+	var sb strings.Builder
+	// no sass parser for markdown? unlucky
+	// probably can make a neovim plugin maybe?, we just need to use sass parser
+	// in the sass part of markdown hmm
+	sb.WriteString("```css\n")
+	sb.WriteString(definition.body)
+	sb.WriteString("\n```")
+	sb.WriteString("\n")
+	sb.WriteString(node_type)
+	sb.WriteString(" defined in: ")
+	sb.WriteString(found_path)
+	return sb.String()
+}
+
+func (lsp *Lsp) GetDefinitionInfo(path string, position sitter.Point) *protocol.Location {
+	tree := lsp.Trees[path]
+	if tree == nil {
+		return nil
+	}
+	ts_tree := tree.Tree
+	input := tree.Input
+	root := ts_tree.RootNode()
+	node := root.NamedDescendantForPointRange(position, position)
+	if node == nil {
+		return nil
+	}
+
+	_, definition, found_path := lsp.findHoverableByName(node.Content(*input))
+	if definition == nil {
+		return nil
+	}
+	return &protocol.Location{
+    URI: uri.URI("file://"+found_path),
+		Range: protocol.Range{
+			Start: protocol.Position{
+				Line:      definition.start_position.Row,
+				Character: definition.start_position.Column,
+			},
+			End: protocol.Position{
+				Line:      definition.end_position.Row,
+				Character: definition.end_position.Column,
+			},
+		},
+	}
 }
 
 func isPointInRange(needle sitter.Point, start_position sitter.Point, end_position sitter.Point) bool {
@@ -239,17 +289,36 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 			Column: position.Character,
 		}
 		hover_info := lsp.GetHoverInfo(path, tree_point)
-    lsp.Log(hover_info, protocol.MessageTypeError)
-    if hover_info == "" {
-      return reply(ctx, fmt.Errorf("no res"), nil)
-    }
+		if hover_info == "" {
+			return reply(ctx, fmt.Errorf("no res"), nil)
+		}
 		return reply(ctx, protocol.Hover{
 			Contents: protocol.MarkupContent{
-				Kind:  protocol.PlainText,
+				Kind:  protocol.Markdown,
 				Value: hover_info,
 			},
 			Range: &protocol.Range{},
 		}, nil)
+
+	case protocol.MethodTextDocumentDefinition:
+		params := req.Params()
+		var replyParams protocol.DefinitionParams
+		err := json.Unmarshal(params, &replyParams)
+		if err != nil {
+			return reply(ctx, fmt.Errorf("?"), nil)
+		}
+		path := replyParams.TextDocument.URI.Filename()
+		position := replyParams.Position
+		tree_point := sitter.Point{
+			Row:    position.Line,
+			Column: position.Character,
+		}
+		definition_info := lsp.GetDefinitionInfo(path, tree_point)
+		lsp.Log(fmt.Sprintf("%+v", definition_info), protocol.MessageTypeError)
+		if definition_info == nil {
+			return reply(ctx, fmt.Errorf("no res"), nil)
+		}
+		return reply(ctx, definition_info, nil)
 	case protocol.MethodShutdown:
 		// without this pylsp-test throws an error, but it's useless, i think
 		return reply(ctx, fmt.Errorf("goodbye"), nil)

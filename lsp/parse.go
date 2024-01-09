@@ -77,7 +77,7 @@ func (p *Parser) ParseTree(parsed_tree *ParsedTree) []Entry {
 		name := p.parseRuleSet(rule_set_node, input)
 		start_position := rule_set_node.StartPoint()
 		end_position := rule_set_node.StartPoint()
-    entries = append(entries, Entry{name: name, start_position: start_position, end_position: end_position})
+		entries = append(entries, Entry{name: name, start_position: start_position, end_position: end_position})
 	}
 	return entries
 }
@@ -107,13 +107,13 @@ func (p *Parser) parseSelectors(rule_set_node *sitter.Node, input *[]byte) strin
 	return node.Captures[0].Node.Content(*input)
 }
 
-func (p *Parser) ParseMixinsInTree(parsed_tree *ParsedTree) []OnHover {
+func (p *Parser) ParseMixinsInTree(parsed_tree *ParsedTree) []isDefined {
 	tree := parsed_tree.Tree
 	input := parsed_tree.Input
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
 	cursor.Exec(p.mixinQuery, root)
-	mixins := make([]OnHover, 0)
+	mixins := make([]isDefined, 0)
 	for {
 		match, ok := cursor.NextMatch()
 		if !ok {
@@ -129,18 +129,18 @@ func (p *Parser) ParseMixinsInTree(parsed_tree *ParsedTree) []OnHover {
 		body := name.Content(*input) + parameters.Content(*input)
 		start_position := mixin_statement_node.StartPoint()
 		end_position := mixin_statement_node.EndPoint()
-		mixins = append(mixins, OnHover{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
+		mixins = append(mixins, isDefined{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
 	}
 	return mixins
 }
 
-func (p *Parser) ParseFunctionsInTree(parsed_tree *ParsedTree) []OnHover {
+func (p *Parser) ParseFunctionsInTree(parsed_tree *ParsedTree) []isDefined {
 	tree := parsed_tree.Tree
 	input := parsed_tree.Input
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
 	cursor.Exec(p.functionQuery, root)
-	functions := make([]OnHover, 0)
+	functions := make([]isDefined, 0)
 	for {
 		match, ok := cursor.NextMatch()
 		if !ok {
@@ -155,18 +155,18 @@ func (p *Parser) ParseFunctionsInTree(parsed_tree *ParsedTree) []OnHover {
 		body := name.Content(*input) + parameters.Content(*input)
 		start_position := function_statement_node.StartPoint()
 		end_position := function_statement_node.EndPoint()
-		functions = append(functions, OnHover{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
+		functions = append(functions, isDefined{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
 	}
 	return functions
 }
 
-func (p *Parser) ParseVariablesInTree(parsed_tree *ParsedTree) []OnHover {
+func (p *Parser) ParseVariablesInTree(parsed_tree *ParsedTree) []isDefined {
 	tree := parsed_tree.Tree
 	input := parsed_tree.Input
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
 	cursor.Exec(p.declerationQuery, root)
-	variables := make([]OnHover, 0)
+	variables := make([]isDefined, 0)
 	for {
 		match, ok := cursor.NextMatch()
 		if !ok {
@@ -180,7 +180,7 @@ func (p *Parser) ParseVariablesInTree(parsed_tree *ParsedTree) []OnHover {
 		body := declaration_node.Content(*input)
 		start_position := declaration_node.StartPoint()
 		end_position := declaration_node.EndPoint()
-		variables = append(variables, OnHover{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
+		variables = append(variables, isDefined{name: name.Content(*input), body: body, start_position: start_position, end_position: end_position})
 	}
 	return variables
 }
