@@ -27,9 +27,15 @@ type Lsp struct {
 	RootConn        rpc2.Conn
 	SelectorEntries map[string][]Entry
 	Trees           map[string]*ParsedTree
-	Mixins          map[string][]isDefined
-	Functions       map[string][]isDefined
-	Variables       map[string][]isDefined
+	// this was not a good idea
+	// the proper way to do this is to have a map of maps, that goes like
+	// path -> name -> data
+	// instead of 3 maps just have 1
+	// oh well, this is just a learning experience anyway
+	// it made so much sense at first!
+	Mixins    map[string][]isDefined
+	Functions map[string][]isDefined
+	Variables map[string][]isDefined
 }
 
 type Entry struct {
@@ -57,8 +63,52 @@ func DefaultLsp() *Lsp {
 	}
 }
 
+func (lsp *Lsp) getWordAtPosition(data []byte, line, column int) (string, error) {
+	// Convert byte array to string
+	content := string(data)
+
+	// Split the content into lines
+	lines := strings.Split(content, "\n")
+
+	// Check if the specified line is within the range
+	if line < 0 || line >= len(lines) {
+		return "", fmt.Errorf("invalid line number: %d", line)
+	}
+
+	// Get the specified line
+	targetLine := lines[line]
+	// Check if the specified column is within the range
+	if column < 0 || column >= len(targetLine) {
+		return "", fmt.Errorf("invalid column number: %d", column)
+	}
+
+	// Use column information to find the word
+	startIndex := column
+	for startIndex > 0 && !isSeparator(targetLine[startIndex-1]) {
+		startIndex--
+	}
+
+	endIndex := column
+	for endIndex < len(targetLine)-1 && !isSeparator(targetLine[endIndex+1]) {
+		endIndex++
+	}
+
+	// Extract the word
+	word := targetLine[startIndex : endIndex+1]
+	return word, nil
+}
+
+func isSeparator(char byte) bool {
+	// Customize this function based on what you consider as word separators
+	// For example, you might want to include characters like '.', ',', ';', etc.
+	return char == ' ' || char == '\t' || char == '\n' || char == '\r' || char == '@'
+}
+
 func (lsp *Lsp) WalkFromRoot() {
-	exclude_dirs := []string{".git", "node_modules", "build", "vendor"}
+	// exclude_dirs := []string{".git", "node_modules", "build", "vendor"}
+	// lets try to not ignore node_modules
+	// just tested it, and it is still super fast
+	exclude_dirs := []string{".git", "build", "vendor"}
 	filepath.WalkDir(lsp.RootPath, func(path string, d os.DirEntry, err error) error {
 		for _, e := range exclude_dirs {
 			if e == d.Name() && d.IsDir() {
@@ -94,6 +144,29 @@ func (lsp *Lsp) WalkFromRoot() {
 
 		return nil
 	})
+}
+func (lsp *Lsp) ParseAndSaveTree(path string) (*ParsedTree, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		lsp.Log(err.Error(), protocol.MessageTypeError)
+		return nil, err
+	}
+	text, err := io.ReadAll(file)
+	if err != nil {
+		lsp.Log(err.Error(), protocol.MessageTypeError)
+		return nil, err
+	}
+	tree, err := lsp.Parser.ParseBytes(text, nil)
+	if err != nil {
+		lsp.Log(err.Error(), protocol.MessageTypeError)
+		return nil, err
+	}
+	lsp.Trees[path] = &ParsedTree{
+		Tree:  tree,
+		Input: &text,
+	}
+	lsp.UpdateTree(lsp.Trees[path], path)
+	return lsp.Trees[path], nil
 }
 
 func (lsp *Lsp) ParseAllTrees() {
@@ -152,9 +225,9 @@ func (lsp *Lsp) GetHoverInfo(path string, position sitter.Point) string {
 	}
 
 	node_type, definition, found_path := lsp.findHoverableByName(node.Content(*input))
-  if definition == nil {
-    return ""
-  }
+	if definition == nil {
+		return ""
+	}
 	var sb strings.Builder
 	// no sass parser for markdown? unlucky
 	// probably can make a neovim plugin maybe?, we just need to use sass parser
@@ -167,6 +240,21 @@ func (lsp *Lsp) GetHoverInfo(path string, position sitter.Point) string {
 	sb.WriteString(" defined in: ")
 	sb.WriteString(found_path)
 	return sb.String()
+}
+
+func (lsp *Lsp) UpdateTreeBytes(path string, input []byte) (*ParsedTree, error) {
+	// TODO figure out how to calculate the diff effectively
+	// lets just update the tree and ignore the old one for now
+	// calculating the diff is probably more expensive that parsing it again
+	tree, err := lsp.Parser.ParseBytes(input, nil)
+	if err != nil {
+		lsp.Log("parse_error", protocol.MessageTypeError)
+		return nil, err
+	}
+	lsp.Trees[path].Tree = tree
+	lsp.Trees[path].Input = &input
+	lsp.UpdateTree(lsp.Trees[path], path)
+	return lsp.Trees[path], nil
 }
 
 func (lsp *Lsp) GetDefinitionInfo(path string, position sitter.Point) *protocol.Location {
@@ -187,7 +275,7 @@ func (lsp *Lsp) GetDefinitionInfo(path string, position sitter.Point) *protocol.
 		return nil
 	}
 	return &protocol.Location{
-    URI: uri.URI("file://"+found_path),
+		URI: uri.URI("file://" + found_path),
 		Range: protocol.Range{
 			Start: protocol.Position{
 				Line:      definition.start_position.Row,
@@ -237,8 +325,12 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 			Capabilities: protocol.ServerCapabilities{
 				DefinitionProvider: true,
 				HoverProvider:      true,
+				CompletionProvider: &protocol.CompletionOptions{
+					ResolveProvider:   false,
+					TriggerCharacters: []string{"$", "@"},
+				},
 				TextDocumentSync: protocol.TextDocumentSyncOptions{
-					Change:    protocol.TextDocumentSyncKindIncremental,
+					Change:    protocol.TextDocumentSyncKindFull,
 					OpenClose: false,
 					Save: &protocol.SaveOptions{
 						IncludeText: true,
@@ -314,11 +406,88 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 			Column: position.Character,
 		}
 		definition_info := lsp.GetDefinitionInfo(path, tree_point)
-		lsp.Log(fmt.Sprintf("%+v", definition_info), protocol.MessageTypeError)
 		if definition_info == nil {
 			return reply(ctx, fmt.Errorf("no res"), nil)
 		}
 		return reply(ctx, definition_info, nil)
+
+	case protocol.MethodTextDocumentDidChange:
+		params := req.Params()
+		var replyParams protocol.DidChangeTextDocumentParams
+		err := json.Unmarshal(params, &replyParams)
+		if err != nil {
+			return reply(ctx, fmt.Errorf("?"), nil)
+		}
+		path := replyParams.TextDocument.URI.Filename()
+		text := replyParams.ContentChanges[0].Text
+
+		if lsp.Trees[path] != nil {
+			_, err := lsp.UpdateTreeBytes(path, []byte(text))
+			if err != nil {
+				lsp.Log(err.Error(), protocol.MessageTypeError)
+				return reply(ctx, fmt.Errorf("goodbye"), nil)
+			}
+		}
+		return reply(ctx, fmt.Errorf("goodbye"), nil)
+
+	case protocol.MethodTextDocumentCompletion:
+		params := req.Params()
+		var replyParams protocol.CompletionParams
+		err := json.Unmarshal(params, &replyParams)
+		if err != nil {
+			return reply(ctx, fmt.Errorf("?"), nil)
+		}
+		position := replyParams.Position
+		is_incomplete := replyParams.Context.TriggerKind == protocol.CompletionTriggerKindTriggerForIncompleteCompletions
+		prefix := ""
+		if is_incomplete {
+			column := position.Character
+			tree := lsp.Trees[replyParams.TextDocument.URI.Filename()]
+			prefix, err = lsp.getWordAtPosition(*tree.Input, int(position.Line), int(column)-1)
+		}
+		trigger_character := replyParams.Context.TriggerCharacter
+		items := []protocol.CompletionItem{}
+		if trigger_character == "@" {
+			for path := range lsp.Mixins {
+				for _, entry := range lsp.Mixins[path] {
+					items = append(items, protocol.CompletionItem{
+						Label:         entry.name,
+						Kind:          protocol.CompletionItemKindInterface,
+						Documentation: entry.body + "\n\n" + path,
+					})
+				}
+			}
+
+			for path := range lsp.Functions {
+				for _, entry := range lsp.Functions[path] {
+					items = append(items, protocol.CompletionItem{
+						Label:         entry.name,
+						Kind:          protocol.CompletionItemKindFunction,
+						Documentation: entry.body + "\n\n" + path,
+					})
+				}
+			}
+		}
+
+		if len(prefix) > 2 {
+			for path := range lsp.Variables {
+				for _, entry := range lsp.Variables[path] {
+					if !strings.Contains(entry.name, prefix) {
+						continue
+					}
+					items = append(items, protocol.CompletionItem{
+						Label:         entry.name,
+						Kind:          protocol.CompletionItemKindVariable,
+						Documentation: entry.body + "\n\n" + path,
+					})
+				}
+			}
+		}
+		return reply(ctx, protocol.CompletionList{
+			IsIncomplete: true,
+			Items:        items,
+		}, nil)
+
 	case protocol.MethodShutdown:
 		// without this pylsp-test throws an error, but it's useless, i think
 		return reply(ctx, fmt.Errorf("goodbye"), nil)
