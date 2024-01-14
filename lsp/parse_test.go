@@ -5,6 +5,40 @@ import (
 	"testing"
 )
 
+func TestAndSelectors(t *testing.T) {
+	lsp := DefaultLsp()
+
+	lsp.RootPath = "/home/ron/programs/scss-lsp/test_dir"
+	test_tree := "/home/ron/programs/scss-lsp/test_dir/file_a.scss"
+
+	if lsp == nil {
+		t.Fatalf("failed to create lsp")
+	}
+	lsp.WalkFromRoot()
+	local_parser := NewParser()
+	entries := local_parser.ParseTree(lsp.Trees[test_tree])
+	// TODO TEST FOR POSITIONS
+	expected := []Entry{
+		{
+			name:     ("&.foo"),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+		{
+			name:     ("&.foo.bar"),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+	}
+	if len(entries) != len(expected) {
+		t.Fatalf("expected %d entries, got %d", len(expected), len(entries))
+	}
+	for idx := range entries {
+		if entries[idx].name != expected[idx].name {
+			t.Fatalf("expected %s, got %s at %v", expected[idx].name, entries[idx].name, idx)
+		}
+	}
+}
 func TestTreeParse(t *testing.T) {
 	lsp := DefaultLsp()
 
@@ -30,6 +64,31 @@ func TestTreeParse(t *testing.T) {
 			end_position: sitter.Point{},
 		},
 		{
+			name:     (`body[id="data-foo"]`),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+		{
+			name:     (`body[id="data-foo"] .foo`),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+		{
+			name:     (`.navbar-toggler[aria-expanded="false"]`),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+    {
+			name:     (`.navbar-toggler[aria-expanded="false"] .toggler-icon.open`),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+    {
+			name:     (`.navbar-toggler[aria-expanded="false"] .toggler-icon.closed`),
+			start_position: sitter.Point{},
+			end_position: sitter.Point{},
+		},
+		{
 			name:     (".level-one"),
 			start_position: sitter.Point{},
 			end_position: sitter.Point{},
@@ -50,7 +109,7 @@ func TestTreeParse(t *testing.T) {
 			end_position: sitter.Point{},
 		},
 		{
-			name:     (".level-one &>.level-two-b"),
+			name:     (".level-one>.level-two-b"),
 			start_position: sitter.Point{},
 			end_position: sitter.Point{},
 		},
@@ -70,7 +129,7 @@ func TestTreeParse(t *testing.T) {
 	}
 	for idx := range entries {
 		if entries[idx].name != expected[idx].name {
-			t.Fatalf("expected %s, got %s", expected[idx].name, entries[idx].name)
+			t.Fatalf("expected %s, got %s at %v", expected[idx].name, entries[idx].name, idx)
 		}
 	}
 }
@@ -89,7 +148,7 @@ func TestMixinParse(t *testing.T) {
 	local_parser := NewParser()
 
 	entries := local_parser.ParseMixinsInTree(lsp.Trees[test_tree])
-	expected := []OnHover{
+	expected := []isDefined{
 		{
 			name:     "test_mixin_a",
 			body:     "test_mixin_a($color)",
@@ -136,7 +195,7 @@ func TestFunctionParse(t *testing.T) {
 	local_parser := NewParser()
 
 	entries := local_parser.ParseFunctionsInTree(lsp.Trees[test_tree])
-	expected := []OnHover{
+	expected := []isDefined{
 		{
 			name:     "test_function_a",
 			body:     "test_function_a($color)",
@@ -185,7 +244,7 @@ func TestVariablesParse(t *testing.T) {
 	local_parser := NewParser()
 
 	entries := local_parser.ParseVariablesInTree(lsp.Trees[test_tree])
-	expected := []OnHover{
+	expected := []isDefined{
     {
       name: "$color1",
       body: "$color1: #000;",

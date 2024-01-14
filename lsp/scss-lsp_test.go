@@ -23,7 +23,7 @@ func TestTreeWalking(t *testing.T) {
 	}
   local_lsp.WalkFromRoot()
 	// this is not great, but it is what it is
-	expected := 5
+	expected := 6
 	if len(local_lsp.Trees) != expected {
 		t.Fatalf("expected %d trees, got %d", expected, len(local_lsp.Trees))
 	}

@@ -108,7 +108,7 @@ func (lsp *Lsp) WalkFromRoot() {
 	// exclude_dirs := []string{".git", "node_modules", "build", "vendor"}
 	// lets try to not ignore node_modules
 	// just tested it, and it is still super fast
-	exclude_dirs := []string{".git", "build", "vendor"}
+	exclude_dirs := []string{".git", "build", "vendor","contrib"}
 	filepath.WalkDir(lsp.RootPath, func(path string, d os.DirEntry, err error) error {
 		for _, e := range exclude_dirs {
 			if e == d.Name() && d.IsDir() {
@@ -117,7 +117,7 @@ func (lsp *Lsp) WalkFromRoot() {
 		}
 		extension := filepath.Ext(path)
 
-		if extension == ".scss" || extension == ".css" {
+		if extension == ".scss" {
 			file, err := os.Open(path)
 			if err != nil {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
@@ -176,6 +176,8 @@ func (lsp *Lsp) ParseAllTrees() {
 }
 
 func (lsp *Lsp) UpdateTree(tree *ParsedTree, path string) {
+  // this doesnt work great if there are more lsps
+  // so i need to figure out how to turn off specific capabilities of other lsps
 	lsp.SelectorEntries[path] = lsp.Parser.ParseTree(tree)
 	lsp.Mixins[path] = lsp.Parser.ParseMixinsInTree(tree)
 	lsp.Functions[path] = lsp.Parser.ParseFunctionsInTree(tree)
@@ -296,6 +298,99 @@ func isPointInRange(needle sitter.Point, start_position sitter.Point, end_positi
 		needle.Column <= end_position.Column
 }
 
+func (lsp *Lsp) gatherSymbolsInPath(path string) []protocol.SymbolInformation {
+	items := make([]protocol.SymbolInformation, 0)
+
+	for _, entry := range lsp.Mixins[path] {
+		items = append(items, protocol.SymbolInformation{
+			Name: entry.name,
+			Kind: protocol.SymbolKindInterface,
+			Location: protocol.Location{
+				URI: uri.URI("file://" + path),
+				Range: protocol.Range{
+					Start: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+					End: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+				},
+			},
+		})
+	}
+
+	for _, entry := range lsp.Variables[path] {
+		items = append(items, protocol.SymbolInformation{
+			Name: entry.name,
+			Kind: protocol.SymbolKindVariable,
+			Location: protocol.Location{
+				URI: uri.URI("file://" + path),
+				Range: protocol.Range{
+					Start: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+					End: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+				},
+			},
+		})
+	}
+
+	for _, entry := range lsp.Functions[path] {
+		items = append(items, protocol.SymbolInformation{
+			Name:     entry.name,
+			Kind:     protocol.SymbolKindFunction,
+			Location: protocol.Location{
+				URI: uri.URI("file://" + path),
+				Range: protocol.Range{
+					Start: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+					End: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+				},
+			},
+		})
+	}
+
+	for _, entry := range lsp.SelectorEntries[path] {
+		items = append(items, protocol.SymbolInformation{
+			Name:     entry.name,
+			Kind:     protocol.SymbolKindClass,
+			Location: protocol.Location{
+				URI: uri.URI("file://" + path),
+				Range: protocol.Range{
+					Start: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+					End: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+				},
+			},
+		})
+	}
+	return items
+}
+
+func (lsp *Lsp) gatherSymbols() []protocol.SymbolInformation {
+	items := make([]protocol.SymbolInformation, 0)
+	for path := range lsp.Trees {
+    items = append(items, lsp.gatherSymbolsInPath(path)...)
+  }
+	return items
+}
+
 func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Request) error {
 	switch req.Method() {
 	case protocol.MethodInitialize:
@@ -323,8 +418,13 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 
 		return reply(ctx, protocol.InitializeResult{
 			Capabilities: protocol.ServerCapabilities{
-				DefinitionProvider: true,
-				HoverProvider:      true,
+        // this doesnt work as good as i expected, but it works
+				WorkspaceSymbolProvider: true,
+        // this works quite good but if multiple lsps are runnning then it will
+        // only show info from one of them, at least in nvim
+				DocumentSymbolProvider:  true,
+				DefinitionProvider:      true,
+				HoverProvider:           true,
 				CompletionProvider: &protocol.CompletionOptions{
 					ResolveProvider:   false,
 					TriggerCharacters: []string{"$", "@"},
@@ -338,6 +438,31 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 				},
 			},
 		}, nil)
+
+	case protocol.MethodWorkspaceSymbol:
+		params := req.Params()
+		var replyParams protocol.WorkspaceSymbolParams
+		err := json.Unmarshal(params, &replyParams)
+		if err != nil {
+			lsp.Log(err.Error(), protocol.MessageTypeError)
+			return nil
+		}
+    symbols := lsp.gatherSymbols()
+		return reply(ctx, symbols, nil)
+
+	case protocol.MethodTextDocumentDocumentSymbol:
+		params := req.Params()
+		var replyParams protocol.DocumentSymbolParams
+		err := json.Unmarshal(params, &replyParams)
+		if err != nil {
+			lsp.Log(err.Error(), protocol.MessageTypeError)
+			return nil
+		}
+    path := replyParams.TextDocument.URI.Filename()
+    symbols := lsp.gatherSymbolsInPath(path)
+    // lsp.Log(fmt.Sprintf("%+v", symbols), protocol.MessageTypeError)
+		return reply(ctx, symbols, nil)
+
 	case protocol.MethodTextDocumentDidSave:
 		params := req.Params()
 		var replyParams protocol.DidSaveTextDocumentParams

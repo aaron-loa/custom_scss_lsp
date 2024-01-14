@@ -8,6 +8,26 @@ body .foo .bar {
   background-color: red;
 }
 
+body[id="data-foo"] {
+  .foo {
+    background-color: red;
+  }
+
+  background-color: red;
+}
+
+.navbar-toggler[aria-expanded="false"] {
+  .toggler-icon.open {
+    display: none;
+  }
+
+  .toggler-icon.closed {
+    display: block;
+    animation: fadeIn .5s;
+  }
+}
+
+
 .level-one {
   background-color: red;
 

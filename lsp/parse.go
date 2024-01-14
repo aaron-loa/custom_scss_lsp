@@ -3,8 +3,10 @@ package lsp
 import (
 	"context"
 	"fmt"
-	sitter "github.com/smacker/go-tree-sitter"
 	binding "scss-lsp/scss_binding"
+	"strings"
+
+	sitter "github.com/smacker/go-tree-sitter"
 )
 
 type Parser struct {
@@ -15,6 +17,12 @@ type Parser struct {
 	mixinQuery       *sitter.Query
 	functionQuery    *sitter.Query
 }
+// we cant parse this with this parser:
+//
+// padding: #{$default-margin/2} #{$default-margin};
+// width: calc(#{$default-margin * 2} + #{$switch-width});
+// this needs to get fixed..., but then the whole thing needs to get rewritten
+// ahhhh
 
 func NewParser() *Parser {
 	parser := sitter.NewParser()
@@ -22,7 +30,7 @@ func NewParser() *Parser {
 
 	stylesheetQuery, err1 := sitter.NewQuery([]byte("(rule_set) @capture"), binding.GetLanguage())
 	selectorQuery, err2 := sitter.NewQuery([]byte("(rule_set (selectors) @capture)"), binding.GetLanguage())
-	declerationQuery, err3 := sitter.NewQuery([]byte("(declaration) @dec"), binding.GetLanguage())
+	declarationQuery, err3 := sitter.NewQuery([]byte("(declaration (variable_name)) @dec"), binding.GetLanguage())
 	mixinQuery, err4 := sitter.NewQuery([]byte("(mixin_statement) @dec"), binding.GetLanguage())
 	functionQuery, err5 := sitter.NewQuery([]byte("(function_statement) @dec"), binding.GetLanguage())
 
@@ -39,7 +47,7 @@ func NewParser() *Parser {
 		Parser:           parser,
 		stylesheetQuery:  stylesheetQuery,
 		selectorQuery:    selectorQuery,
-		declerationQuery: declerationQuery,
+		declerationQuery: declarationQuery,
 		mixinQuery:       mixinQuery,
 		functionQuery:    functionQuery,
 	}
@@ -90,10 +98,16 @@ func (p *Parser) parseRuleSet(rule_set_node *sitter.Node, input *[]byte) string 
 			break
 		}
 		if parent.Type() == "rule_set" {
-			name = p.parseSelectors(parent, input) + " " + name
+      if strings.Contains(name, "&") {
+        name = strings.ReplaceAll(name, "&" , "")
+        name = p.parseSelectors(parent, input) + name
+      } else {
+        name = p.parseSelectors(parent, input) + " " + name
+      }
 		}
 		parent = parent.Parent()
 	}
+  name = strings.ReplaceAll(name, "\n", "")
 	return name
 }
 
