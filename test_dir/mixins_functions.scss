@@ -9,7 +9,10 @@
 @function test_function_c() {
   @return "something";
 }
+
+$color: #123;
 $color: #111;
+
 @mixin test_mixin_a($color) {
   color: $color;
 }

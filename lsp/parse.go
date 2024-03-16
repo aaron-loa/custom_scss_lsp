@@ -17,6 +17,7 @@ type Parser struct {
 	mixinQuery       *sitter.Query
 	functionQuery    *sitter.Query
 }
+
 // we cant parse this with this parser:
 //
 // padding: #{$default-margin/2} #{$default-margin};
@@ -59,16 +60,14 @@ func (p *Parser) ParseString(text string, tree *sitter.Tree) (*sitter.Tree, erro
 	return tree, err
 }
 
-func (p *Parser) ParseBytes(text []byte, tree *sitter.Tree) (*sitter.Tree, error) {
+func (p *Parser) ParseBytes(text *[]byte, tree *sitter.Tree) (*sitter.Tree, error) {
 	// tree can be null i tihnk?
-	tree, err := p.Parser.ParseCtx(context.TODO(), tree, text)
+	tree, err := p.Parser.ParseCtx(context.TODO(), tree, *text)
 	return tree, err
 }
 
-func (p *Parser) ParseTree(parsed_tree *ParsedTree) []Entry {
+func (p *Parser) ParseTree(tree *sitter.Tree, input *[]byte) []Entry {
 	// extract class selectors from the tree
-	tree := parsed_tree.Tree
-	input := parsed_tree.Input
 	root := tree.RootNode()
 	cursor := sitter.NewQueryCursor()
 	cursor.Exec(p.stylesheetQuery, root)
@@ -98,16 +97,16 @@ func (p *Parser) parseRuleSet(rule_set_node *sitter.Node, input *[]byte) string 
 			break
 		}
 		if parent.Type() == "rule_set" {
-      if strings.Contains(name, "&") {
-        name = strings.ReplaceAll(name, "&" , "")
-        name = p.parseSelectors(parent, input) + name
-      } else {
-        name = p.parseSelectors(parent, input) + " " + name
-      }
+			if strings.Contains(name, "&") {
+				name = strings.ReplaceAll(name, "&", "")
+				name = p.parseSelectors(parent, input) + name
+			} else {
+				name = p.parseSelectors(parent, input) + " " + name
+			}
 		}
 		parent = parent.Parent()
 	}
-  name = strings.ReplaceAll(name, "\n", "")
+	name = strings.ReplaceAll(name, "\n", "")
 	return name
 }
 
@@ -121,9 +120,7 @@ func (p *Parser) parseSelectors(rule_set_node *sitter.Node, input *[]byte) strin
 	return node.Captures[0].Node.Content(*input)
 }
 
-func (p *Parser) ParseMixinsInTree(parsed_tree *ParsedTree) []isDefined {
-	tree := parsed_tree.Tree
-	input := parsed_tree.Input
+func (p *Parser) ParseMixinsInTree(tree *sitter.Tree, input *[]byte) []isDefined {
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
 	cursor.Exec(p.mixinQuery, root)
@@ -148,9 +145,7 @@ func (p *Parser) ParseMixinsInTree(parsed_tree *ParsedTree) []isDefined {
 	return mixins
 }
 
-func (p *Parser) ParseFunctionsInTree(parsed_tree *ParsedTree) []isDefined {
-	tree := parsed_tree.Tree
-	input := parsed_tree.Input
+func (p *Parser) ParseFunctionsInTree(tree *sitter.Tree, input *[]byte) []isDefined {
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
 	cursor.Exec(p.functionQuery, root)
@@ -174,9 +169,7 @@ func (p *Parser) ParseFunctionsInTree(parsed_tree *ParsedTree) []isDefined {
 	return functions
 }
 
-func (p *Parser) ParseVariablesInTree(parsed_tree *ParsedTree) []isDefined {
-	tree := parsed_tree.Tree
-	input := parsed_tree.Input
+func (p *Parser) ParseVariablesInTree(tree *sitter.Tree, input *[]byte) []isDefined {
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
 	cursor.Exec(p.declerationQuery, root)
