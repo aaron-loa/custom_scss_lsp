@@ -21,6 +21,7 @@ type Lsp struct {
 	RootConn        rpc2.Conn
 	SelectorEntries map[string][]Entry
 	Trees           map[string]*sitter.Tree
+	Cache           map[string][]byte
 	// this was not a good idea
 	// the proper way to do this is to have a map of maps, that goes like
 	// path -> name -> data
@@ -31,6 +32,7 @@ type Lsp struct {
 	Functions map[string][]isDefined
 	Variables map[string][]isDefined
 	Calls     map[string][]isDefined
+  CallWhitelist []string
 }
 
 type Entry struct {
@@ -56,6 +58,8 @@ func DefaultLsp() *Lsp {
 		Functions:       make(map[string][]isDefined),
 		Variables:       make(map[string][]isDefined),
 		Calls:           make(map[string][]isDefined),
+    Cache:           make(map[string][]byte),
+    CallWhitelist:   []string{"url"},
 	}
 }
 
@@ -232,6 +236,10 @@ func (lsp *Lsp) stringFromFilePath(path string) (string, error) {
 }
 
 func (lsp *Lsp) bytesFromFilePath(path string) (*[]byte, error) {
+  if lsp.Cache[path] != nil {
+    bytes := lsp.Cache[path]
+    return &bytes, nil
+  }
 	file, err := os.Open(path)
 	if err != nil {
 		lsp.Log(err.Error(), protocol.MessageTypeError)
@@ -309,7 +317,6 @@ func (lsp *Lsp) GetDefinitionInfo(path string, position sitter.Point) *[]protoco
 		return nil
 	}
 	word := node.Content(*input)
-	lsp.Log(fmt.Sprintf("word: %s", word), protocol.MessageTypeError)
 	definitions := *lsp.findHoverableByName(&word)
 	if len(definitions) == 0 {
 		return nil
@@ -427,6 +434,51 @@ func (lsp *Lsp) gatherSymbolsInPath(path string) []protocol.SymbolInformation {
 	}
 	return items
 }
+func (lsp *Lsp) doesCallExist(call_name string) bool {
+	look_in_these := []map[string][]isDefined{lsp.Mixins, lsp.Functions, lsp.Variables}
+	for path := range lsp.Trees {
+		for _, current_array := range look_in_these {
+			for _, entry := range current_array[path] {
+				if call_name == entry.name {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func (lsp *Lsp) reportDiagnostics(path string) {
+	diagnostics := []protocol.Diagnostic{}
+	for _, entry := range lsp.Calls[path] {
+    for _, call := range lsp.CallWhitelist {
+      if call == entry.name {
+        return
+      }
+    }
+		if !lsp.doesCallExist(entry.name) {
+			diagnostic := protocol.Diagnostic{
+				Range: protocol.Range{
+					Start: protocol.Position{
+						Line:      entry.start_position.Row,
+						Character: entry.start_position.Column,
+					},
+					End: protocol.Position{
+						Line:      entry.end_position.Row,
+						Character: entry.end_position.Column,
+					},
+				},
+				Severity:        protocol.DiagnosticSeverityError,
+				Code:            nil,
+				CodeDescription: &protocol.CodeDescription{},
+				Source:          "SCSS-LSP",
+				Message:         "undefined",
+			}
+			diagnostics = append(diagnostics, diagnostic)
+		}
+	}
+	lsp.SendDiagnostic(path, &diagnostics)
+}
 
 func (lsp *Lsp) getReferences(path string, position sitter.Point) []protocol.Location {
 	references := []protocol.Location{}
@@ -479,7 +531,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		if err != nil {
 			lsp.Log("cant unmarshal params", protocol.MessageTypeError)
 		}
-
+    
 		// RootURI is deprecated? but everything uses it? hmmm
 		lsp.Log(fmt.Sprintf("%+v", replyParams.RootURI.Filename()), protocol.MessageTypeError)
 		if replyParams.RootURI != "" {
@@ -492,7 +544,8 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		go func() {
 			lsp.WalkFromRoot()
 		}()
-
+    path := replyParams.RootURI.Filename()
+    lsp.reportDiagnostics(path)
 		return reply(ctx, protocol.InitializeResult{
 			Capabilities: protocol.ServerCapabilities{
 				// this doesnt work as good as i expected, but it works
@@ -509,13 +562,26 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 				},
 				TextDocumentSync: protocol.TextDocumentSyncOptions{
 					Change:    protocol.TextDocumentSyncKindFull,
-					OpenClose: false,
+					OpenClose: true,
+					WillSave:  true,
 					Save: &protocol.SaveOptions{
 						IncludeText: true,
 					},
 				},
 			},
 		}, nil)
+
+  case protocol.MethodTextDocumentDidOpen:
+    params := req.Params()
+    var replyParams protocol.DidOpenTextDocumentParams
+    err := json.Unmarshal(params, &replyParams)
+    if err != nil {
+      lsp.Log(err.Error(), protocol.MessageTypeError)
+      return nil
+    }
+    path := replyParams.TextDocument.URI.Filename()
+    lsp.reportDiagnostics(path)
+    return reply(ctx, nil, nil)
 
 	case protocol.MethodWorkspaceSymbol:
 		params := req.Params()
@@ -544,7 +610,6 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		params := req.Params()
 		var replyParams protocol.ReferenceParams
 		err := json.Unmarshal(params, &replyParams)
-
 		if err != nil {
 			lsp.Log(err.Error(), protocol.MessageTypeError)
 		}
@@ -586,6 +651,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 		lsp.Trees[path] = tree
 		lsp.UpdateTree(lsp.Trees[path], path, &input)
+    lsp.reportDiagnostics(path)
 		return reply(ctx, nil, nil)
 
 	case protocol.MethodTextDocumentHover:
@@ -644,6 +710,8 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		path := replyParams.TextDocument.URI.Filename()
 		text := []byte(replyParams.ContentChanges[0].Text)
 
+    lsp.Cache[path] = text
+
 		if lsp.Trees[path] != nil {
 			_, err := lsp.UpdateTreeBytes(path, &text)
 			if err != nil {
@@ -662,22 +730,31 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 		position := replyParams.Position
 		is_incomplete := replyParams.Context.TriggerKind == protocol.CompletionTriggerKindTriggerForIncompleteCompletions
+
 		prefix := ""
-		if is_incomplete {
-			column := position.Character
-			tree := lsp.Trees[replyParams.TextDocument.URI.Filename()]
-			if tree == nil {
-				lsp.ParseAndSaveTree(replyParams.TextDocument.URI.Filename())
-				tree = lsp.Trees[replyParams.TextDocument.URI.Filename()]
-			}
-			input, err := lsp.stringFromFilePath(replyParams.TextDocument.URI.Filename())
-			if err != nil {
-				return reply(ctx, fmt.Errorf("error reading file"), nil)
-			}
-			prefix, err = lsp.getWordAtPosition(&input, int(position.Line), int(column)-1)
-		}
+    column := position.Character
+    tree := lsp.Trees[replyParams.TextDocument.URI.Filename()]
+    if tree == nil {
+      lsp.ParseAndSaveTree(replyParams.TextDocument.URI.Filename())
+      tree = lsp.Trees[replyParams.TextDocument.URI.Filename()]
+    }
+    input, err := lsp.bytesFromFilePath(replyParams.TextDocument.URI.Filename())
+    if err != nil {
+      return reply(ctx, fmt.Errorf("error reading file"), nil)
+    }
+    input_string := string(*input)
+    prefix, err = lsp.getWordAtPosition(&input_string, int(position.Line), int(column)-1)
+
+    if err != nil {
+      lsp.Log(err.Error(), protocol.MessageTypeError)
+    }
 		trigger_character := replyParams.Context.TriggerCharacter
 		items := []protocol.CompletionItem{}
+
+    if strings.Contains(prefix, "$") {
+      is_incomplete = true
+    }
+
 		if trigger_character == "@" {
 			for path := range lsp.Mixins {
 				for _, entry := range lsp.Mixins[path] {
@@ -701,6 +778,8 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 
 		if len(prefix) > 2 {
+      is_incomplete = true
+      prefix = prefix[1:]
 			for path := range lsp.Variables {
 				for _, entry := range lsp.Variables[path] {
 					if !strings.Contains(entry.name, prefix) {
@@ -715,7 +794,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 			}
 		}
 		return reply(ctx, protocol.CompletionList{
-			IsIncomplete: true,
+			IsIncomplete: is_incomplete,
 			Items:        items,
 		}, nil)
 
@@ -744,6 +823,14 @@ func (lsp *Lsp) Log(message string, messageType protocol.MessageType) {
 	lsp.RootConn.Notify(context.Background(), protocol.MethodWindowLogMessage, protocol.LogMessageParams{
 		Message: fmt.Sprintf("SCSS-LSP: %s", message),
 		Type:    messageType,
+	})
+}
+
+func (lsp *Lsp) SendDiagnostic(path string, diagnostics *[]protocol.Diagnostic) {
+	lsp.RootConn.Notify(context.Background(), protocol.MethodTextDocumentPublishDiagnostics, protocol.PublishDiagnosticsParams{
+		URI:         uri.URI("file://" + path),
+		Version:     0,
+		Diagnostics: *diagnostics,
 	})
 }
 

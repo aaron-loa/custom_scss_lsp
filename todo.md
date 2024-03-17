@@ -1,3 +1,3 @@
-references!
-errors!
+references! ok
+errors! ok
 fix tests!
