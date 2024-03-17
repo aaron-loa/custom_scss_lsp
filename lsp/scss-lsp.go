@@ -762,6 +762,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 						Label:         entry.name,
 						Kind:          protocol.CompletionItemKindInterface,
 						Documentation: entry.body + "\n\n" + path,
+            InsertText:    "include " + entry.name,
 					})
 				}
 			}
@@ -772,6 +773,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 						Label:         entry.name,
 						Kind:          protocol.CompletionItemKindFunction,
 						Documentation: entry.body + "\n\n" + path,
+            InsertText:    entry.name,
 					})
 				}
 			}
@@ -789,6 +791,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 						Label:         entry.name,
 						Kind:          protocol.CompletionItemKindVariable,
 						Documentation: entry.body + "\n\n" + path,
+            InsertText:    entry.name,
 					})
 				}
 			}
