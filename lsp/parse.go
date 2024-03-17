@@ -10,12 +10,15 @@ import (
 )
 
 type Parser struct {
-	Parser           *sitter.Parser
-	stylesheetQuery  *sitter.Query
-	selectorQuery    *sitter.Query
-	declerationQuery *sitter.Query
-	mixinQuery       *sitter.Query
-	functionQuery    *sitter.Query
+	Parser            *sitter.Parser
+	stylesheetQuery   *sitter.Query
+	selectorQuery     *sitter.Query
+	declerationQuery  *sitter.Query
+	mixinQuery        *sitter.Query
+	functionQuery     *sitter.Query
+	mixinCallQuery    *sitter.Query
+	functionCallQuery *sitter.Query
+	variableCallQuery *sitter.Query
 }
 
 // we cant parse this with this parser:
@@ -35,22 +38,30 @@ func NewParser() *Parser {
 	mixinQuery, err4 := sitter.NewQuery([]byte("(mixin_statement) @dec"), binding.GetLanguage())
 	functionQuery, err5 := sitter.NewQuery([]byte("(function_statement) @dec"), binding.GetLanguage())
 
-	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil {
+	mixinCallQuery, err6 := sitter.NewQuery([]byte("(include_statement (identifier) @dec)"), binding.GetLanguage())
+	functionCallQuery, err7 := sitter.NewQuery([]byte("(call_expression (function_name) @dec)"), binding.GetLanguage())
+	variableCallQuery, err8 := sitter.NewQuery([]byte("(variable_value) @dec"), binding.GetLanguage())
+
+	if err1 != nil || err2 != nil || err3 != nil || err4 != nil || err5 != nil || err6 != nil || err7 != nil || err8 != nil {
 		fmt.Println(err1)
 		fmt.Println(err2)
 		fmt.Println(err3)
 		fmt.Println(err4)
 		fmt.Println(err5)
-		panic(fmt.Sprintf("failed to create queries"))
-	}
+    // excellent error handling
+    panic(fmt.Errorf("%v %v %v %v %v %v %v %v", err1, err2, err3, err4, err5, err6, err7, err8))
+  }
 
 	return &Parser{
-		Parser:           parser,
-		stylesheetQuery:  stylesheetQuery,
-		selectorQuery:    selectorQuery,
-		declerationQuery: declarationQuery,
-		mixinQuery:       mixinQuery,
-		functionQuery:    functionQuery,
+		Parser:            parser,
+		stylesheetQuery:   stylesheetQuery,
+		selectorQuery:     selectorQuery,
+		declerationQuery:  declarationQuery,
+		mixinQuery:        mixinQuery,
+		functionQuery:     functionQuery,
+		mixinCallQuery:    mixinCallQuery,
+		functionCallQuery: functionCallQuery,
+		variableCallQuery: variableCallQuery,
 	}
 }
 
@@ -169,6 +180,30 @@ func (p *Parser) ParseFunctionsInTree(tree *sitter.Tree, input *[]byte) []isDefi
 	return functions
 }
 
+func (p *Parser) ParseCalls(tree *sitter.Tree, input *[]byte) []isDefined {
+	cursor := sitter.NewQueryCursor()
+	root := tree.RootNode()
+	queries := []*sitter.Query{p.mixinCallQuery, p.functionCallQuery, p.variableCallQuery}
+	captures := []isDefined{}
+
+	for _, query := range queries {
+		cursor.Exec(query, root)
+		for {
+			match, ok := cursor.NextMatch()
+			if !ok {
+				break
+			}
+			node := match.Captures[0].Node
+			text := node.Content(*input)
+			start_position := node.StartPoint()
+			end_position := node.EndPoint()
+			captures = append(captures, isDefined{name: text, body: text, start_position: start_position, end_position: end_position})
+		}
+	}
+
+	return captures
+}
+
 func (p *Parser) ParseVariablesInTree(tree *sitter.Tree, input *[]byte) []isDefined {
 	cursor := sitter.NewQueryCursor()
 	root := tree.RootNode()
@@ -179,7 +214,6 @@ func (p *Parser) ParseVariablesInTree(tree *sitter.Tree, input *[]byte) []isDefi
 		if !ok {
 			break
 		}
-		// always function_statement node
 		declaration_node := match.Captures[0].Node
 		// this doesnt want to work for some reason, probably doing something wrong
 		// name := declearation_node.ChildByFieldName("name")

@@ -24,3 +24,9 @@ $color: #111;
 @mixin test_mixin_c() {
   color: $color;
 }
+
+.test {
+  @include test_mixin_a($color, $color2);
+  background: test_function_a($color);
+  color: $color;
+}

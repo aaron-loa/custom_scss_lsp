@@ -30,6 +30,7 @@ type Lsp struct {
 	Mixins    map[string][]isDefined
 	Functions map[string][]isDefined
 	Variables map[string][]isDefined
+	Calls     map[string][]isDefined
 }
 
 type Entry struct {
@@ -54,6 +55,7 @@ func DefaultLsp() *Lsp {
 		Mixins:          make(map[string][]isDefined),
 		Functions:       make(map[string][]isDefined),
 		Variables:       make(map[string][]isDefined),
+		Calls:           make(map[string][]isDefined),
 	}
 }
 
@@ -133,7 +135,10 @@ func (lsp *Lsp) WalkFromRoot() {
 				return nil
 			}
 			lsp.Trees[path] = tree
-      lsp.UpdateTree(lsp.Trees[path], path, &text)
+			if lsp.Trees[path] == nil {
+				lsp.Trees[path] = &sitter.Tree{}
+			}
+			lsp.UpdateTree(lsp.Trees[path], path, &text)
 		}
 
 		return nil
@@ -167,15 +172,16 @@ func (lsp *Lsp) UpdateTree(tree *sitter.Tree, path string, input *[]byte) {
 	lsp.Mixins[path] = lsp.Parser.ParseMixinsInTree(tree, input)
 	lsp.Functions[path] = lsp.Parser.ParseFunctionsInTree(tree, input)
 	lsp.Variables[path] = lsp.Parser.ParseVariablesInTree(tree, input)
+	lsp.Calls[path] = lsp.Parser.ParseCalls(tree, input)
 }
 
 func (lsp *Lsp) findHoverableByNameInMap(name *string, in_this *map[string][]isDefined, item_type *string) *[]isDefinedInfo {
-  defined_info_array := []isDefinedInfo{}
+	defined_info_array := []isDefinedInfo{}
 	for path, array := range *in_this {
 		for _, entry := range array {
 			if entry.name == *name {
-        info := isDefinedInfo{path: path, is_defined: entry, item_type: *item_type}
-        defined_info_array = append(defined_info_array, info)
+				info := isDefinedInfo{path: path, is_defined: entry, item_type: *item_type}
+				defined_info_array = append(defined_info_array, info)
 			}
 		}
 	}
@@ -183,26 +189,26 @@ func (lsp *Lsp) findHoverableByNameInMap(name *string, in_this *map[string][]isD
 }
 
 type isDefinedInfo struct {
-  path string
-  item_type string
-  is_defined isDefined
+	path       string
+	item_type  string
+	is_defined isDefined
 }
 
 func (lsp *Lsp) findHoverableByName(name *string) *[]isDefinedInfo {
-  defined_array := []isDefinedInfo{}
+	defined_array := []isDefinedInfo{}
 
-  mixin := "@mixin"
-  function := "@function"
-  variable := "$variable"
+	mixin := "@mixin"
+	function := "@function"
+	variable := "$variable"
 
 	is_defined_object := lsp.findHoverableByNameInMap(name, &lsp.Mixins, &mixin)
-  defined_array = append(defined_array, *is_defined_object...)
+	defined_array = append(defined_array, *is_defined_object...)
 
 	is_defined_object = lsp.findHoverableByNameInMap(name, &lsp.Functions, &function)
-  defined_array = append(defined_array, *is_defined_object...)
-  
+	defined_array = append(defined_array, *is_defined_object...)
+
 	is_defined_object = lsp.findHoverableByNameInMap(name, &lsp.Variables, &variable)
-  defined_array = append(defined_array, *is_defined_object...)
+	defined_array = append(defined_array, *is_defined_object...)
 
 	return &defined_array
 }
@@ -210,14 +216,14 @@ func (lsp *Lsp) findHoverableByName(name *string) *[]isDefinedInfo {
 func (lsp *Lsp) stringFromFilePath(path string) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
-    lsp.Log(err.Error(), protocol.MessageTypeError)
+		lsp.Log(err.Error(), protocol.MessageTypeError)
 		return "", err
 	}
 
 	bytes, err := io.ReadAll(file)
 
 	if err != nil {
-    lsp.Log(err.Error(), protocol.MessageTypeError)
+		lsp.Log(err.Error(), protocol.MessageTypeError)
 		return "", err
 	}
 	string := string(bytes)
@@ -228,14 +234,14 @@ func (lsp *Lsp) stringFromFilePath(path string) (string, error) {
 func (lsp *Lsp) bytesFromFilePath(path string) (*[]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
-    lsp.Log(err.Error(), protocol.MessageTypeError)
+		lsp.Log(err.Error(), protocol.MessageTypeError)
 		return nil, err
 	}
 
 	bytes, err := io.ReadAll(file)
 
 	if err != nil {
-    lsp.Log(err.Error(), protocol.MessageTypeError)
+		lsp.Log(err.Error(), protocol.MessageTypeError)
 		return nil, err
 	}
 	return &bytes, nil
@@ -248,12 +254,12 @@ func (lsp *Lsp) GetHoverInfo(path string, position sitter.Point) string {
 	}
 	bytes, err := lsp.bytesFromFilePath(path)
 	if err != nil {
-    lsp.Log(err.Error(), protocol.MessageTypeError)
+		lsp.Log(err.Error(), protocol.MessageTypeError)
 		return ""
 	}
-  root := tree.RootNode()
-  node := root.NamedDescendantForPointRange(position, position)
-  input := node.Content(*bytes)
+	root := tree.RootNode()
+	node := root.NamedDescendantForPointRange(position, position)
+	input := node.Content(*bytes)
 	definitions := *lsp.findHoverableByName(&input)
 
 	if len(definitions) == 0 {
@@ -302,32 +308,32 @@ func (lsp *Lsp) GetDefinitionInfo(path string, position sitter.Point) *[]protoco
 	if err != nil {
 		return nil
 	}
-  word := node.Content(*input)
-  lsp.Log(fmt.Sprintf("word: %s", word), protocol.MessageTypeError)
+	word := node.Content(*input)
+	lsp.Log(fmt.Sprintf("word: %s", word), protocol.MessageTypeError)
 	definitions := *lsp.findHoverableByName(&word)
 	if len(definitions) == 0 {
 		return nil
 	}
 
-  locations := []protocol.Location{}
-  
-  for _, entry := range definitions {
-    location := protocol.Location{
-      URI: uri.URI("file://" + entry.path),
-      Range: protocol.Range{
-        Start: protocol.Position{
-          Line:      entry.is_defined.start_position.Row,
-          Character: entry.is_defined.start_position.Column,
-        },
-        End: protocol.Position{
-          Line:      entry.is_defined.end_position.Row,
-          Character: entry.is_defined.end_position.Column,
-        },
-      },
-    }
-    locations = append(locations, location)
-  }
-  return &locations
+	locations := []protocol.Location{}
+
+	for _, entry := range definitions {
+		location := protocol.Location{
+			URI: uri.URI("file://" + entry.path),
+			Range: protocol.Range{
+				Start: protocol.Position{
+					Line:      entry.is_defined.start_position.Row,
+					Character: entry.is_defined.start_position.Column,
+				},
+				End: protocol.Position{
+					Line:      entry.is_defined.end_position.Row,
+					Character: entry.is_defined.end_position.Column,
+				},
+			},
+		}
+		locations = append(locations, location)
+	}
+	return &locations
 }
 
 func isPointInRange(needle sitter.Point, start_position sitter.Point, end_position sitter.Point) bool {
@@ -422,6 +428,39 @@ func (lsp *Lsp) gatherSymbolsInPath(path string) []protocol.SymbolInformation {
 	return items
 }
 
+func (lsp *Lsp) getReferences(path string, position sitter.Point) []protocol.Location {
+	references := []protocol.Location{}
+	byte_input, err := lsp.bytesFromFilePath(path)
+
+	if err != nil {
+		return references
+	}
+	root := lsp.Trees[path].RootNode()
+	node := root.NamedDescendantForPointRange(position, position)
+	word := node.Content(*byte_input)
+
+	for path := range lsp.Trees {
+		for _, entry := range lsp.Calls[path] {
+			if entry.name == word {
+				references = append(references, protocol.Location{
+					URI: uri.URI("file://" + path),
+					Range: protocol.Range{
+						Start: protocol.Position{
+							Line:      entry.start_position.Row,
+							Character: entry.start_position.Column,
+						},
+						End: protocol.Position{
+							Line:      entry.end_position.Row,
+							Character: entry.end_position.Column,
+						},
+					},
+				})
+			}
+		}
+	}
+	return references
+}
+
 func (lsp *Lsp) gatherSymbols() []protocol.SymbolInformation {
 	items := make([]protocol.SymbolInformation, 0)
 	for path := range lsp.Trees {
@@ -462,6 +501,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 				// only show info from one of them, at least in nvim
 				DocumentSymbolProvider: true,
 				DefinitionProvider:     true,
+				ReferencesProvider:     true,
 				HoverProvider:          true,
 				CompletionProvider: &protocol.CompletionOptions{
 					ResolveProvider:   false,
@@ -498,8 +538,28 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 		path := replyParams.TextDocument.URI.Filename()
 		symbols := lsp.gatherSymbolsInPath(path)
-		// lsp.Log(fmt.Sprintf("%+v", symbols), protocol.MessageTypeError)
 		return reply(ctx, symbols, nil)
+
+	case protocol.MethodTextDocumentReferences:
+		params := req.Params()
+		var replyParams protocol.ReferenceParams
+		err := json.Unmarshal(params, &replyParams)
+
+		if err != nil {
+			lsp.Log(err.Error(), protocol.MessageTypeError)
+		}
+		path := replyParams.TextDocument.URI.Filename()
+
+		tree_point := sitter.Point{
+			Row:    replyParams.Position.Line,
+			Column: replyParams.Position.Character,
+		}
+
+		references := lsp.getReferences(path, tree_point)
+		if len(references) == 0 {
+			return reply(ctx, fmt.Errorf("no references"), nil)
+		}
+		return reply(ctx, references, nil)
 
 	case protocol.MethodTextDocumentDidSave:
 		params := req.Params()
@@ -520,10 +580,10 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 			lsp.Log("parse_error", protocol.MessageTypeError)
 			return reply(ctx, fmt.Errorf("goodbye"), fmt.Errorf("error parsing tree of: %s", path))
 		}
-		// ???
-		// if lsp.Trees[path] == nil {
-		//   lsp.Trees[path] = &sitter.Tree{}
-		// }
+
+		if lsp.Trees[path] == nil {
+			lsp.Trees[path] = &sitter.Tree{}
+		}
 		lsp.Trees[path] = tree
 		lsp.UpdateTree(lsp.Trees[path], path, &input)
 		return reply(ctx, nil, nil)
@@ -568,9 +628,8 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 
 		definition_info := *lsp.GetDefinitionInfo(path, tree_point)
-    lsp.Log(fmt.Sprintf("%+v", definition_info), protocol.MessageTypeError)
 		if definition_info == nil {
-      lsp.Log(fmt.Sprintf("no definitions"), protocol.MessageTypeError)
+			// lsp.Log(fmt.Sprintf("no definitions"), protocol.MessageTypeError)
 			return reply(ctx, fmt.Errorf("no res"), nil)
 		}
 		return reply(ctx, definition_info, nil)
@@ -586,14 +645,13 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		text := []byte(replyParams.ContentChanges[0].Text)
 
 		if lsp.Trees[path] != nil {
-			_, err := lsp.UpdateTreeBytes(path,  &text)
+			_, err := lsp.UpdateTreeBytes(path, &text)
 			if err != nil {
 				lsp.Log(err.Error(), protocol.MessageTypeError)
 				return reply(ctx, fmt.Errorf("goodbye"), nil)
 			}
 		}
 		return reply(ctx, fmt.Errorf("goodbye"), nil)
-
 
 	case protocol.MethodTextDocumentCompletion:
 		params := req.Params()
