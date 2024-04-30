@@ -18,7 +18,7 @@ $color: #111;
 }
 
 @mixin test_mixin_b($color, $one_more) {
-  color: $color;
+  color: $aa;
 }
 
 @mixin test_mixin_c() {

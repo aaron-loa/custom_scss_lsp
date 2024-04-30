@@ -59,7 +59,17 @@ func DefaultLsp() *Lsp {
 		Variables:       make(map[string][]isDefined),
 		Calls:           make(map[string][]isDefined),
 		Cache:           make(map[string][]byte),
-		CallWhitelist:   []string{"url"},
+		CallWhitelist:   []string{
+      "url",
+      "var",
+      "translateY",
+      "translateX",
+      "calc",
+      "linear-gradient",
+      "linear-gradient",
+      "repeat",
+      "nth-child",
+    },
 	}
 }
 
@@ -693,7 +703,7 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 			Column: position.Character,
 		}
 
-		definition_info := *lsp.GetDefinitionInfo(path, tree_point)
+		definition_info := lsp.GetDefinitionInfo(path, tree_point)
 		if definition_info == nil {
 			// lsp.Log(fmt.Sprintf("no definitions"), protocol.MessageTypeError)
 			return reply(ctx, fmt.Errorf("no res"), nil)
