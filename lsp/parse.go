@@ -20,14 +20,6 @@ type Parser struct {
 	functionCallQuery *sitter.Query
 	variableCallQuery *sitter.Query
 }
-
-// we cant parse this with this parser:
-//
-// padding: #{$default-margin/2} #{$default-margin};
-// width: calc(#{$default-margin * 2} + #{$switch-width});
-// this needs to get fixed..., but then the whole thing needs to get rewritten
-// ahhhh
-
 func NewParser() *Parser {
 	parser := sitter.NewParser()
 	parser.SetLanguage(binding.GetLanguage())

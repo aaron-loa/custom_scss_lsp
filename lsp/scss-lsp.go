@@ -66,9 +66,14 @@ func DefaultLsp() *Lsp {
       "translateX",
       "calc",
       "linear-gradient",
-      "linear-gradient",
       "repeat",
       "nth-child",
+      "darken",
+      "lighten",
+      "rgba",
+      "rgb",
+      "translate",
+      "mix",
     },
 	}
 }
