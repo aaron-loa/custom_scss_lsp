@@ -684,7 +684,9 @@ func (lsp *Lsp) LspHandler(ctx context.Context, reply rpc2.Replier, req rpc2.Req
 		}
 		hover_info := lsp.GetHoverInfo(path, tree_point)
 		if hover_info == "" {
-			return reply(ctx, fmt.Errorf("no res"), nil)
+			return reply(ctx, 
+				nil,
+				nil)
 		}
 		return reply(ctx, protocol.Hover{
 			Contents: protocol.MarkupContent{
